@@ -742,7 +742,7 @@ do
                             end
                             lib:Theme("white")
                        do
-                           local oxyWindow = lib:AddWindow("zenny private", "v1.1")
+                           local oxyWindow = lib:AddWindow("zenny private", "v1.2")
                            local combat = oxyWindow:AddTab("combat", "rbxassetid://10734951847")
                            visual2 = oxyWindow:AddTab("visual", "rbxassetid://10723346959")  -- ลบ local
                            misc2 = oxyWindow:AddTab("misc", "rbxassetid://10709797985")      -- ลบ local
@@ -907,10 +907,11 @@ do
                                     end
                                     return auxiliaryValue
                                 end
-                                profileNameInput = createTextInput(profile, "profile name", "default", config.fflag_profile, false, function(inputValue)
+                                -- use Fluent-native AddInput instead of createTextInput (NeverLose-specific)
+                                profileNameInput = profile:AddInput("profile name", "default", config.fflag_profile, true, function(inputValue)
                                     config.fflag_profile = configStorage.trim(inputValue)
                                 end)
-                                flagsJsonInput = createTextInput(fflagsSection, "fflags json", "{\"DFIntTaskSchedulerTargetFps\":\"240\"}", config.fflag_json, true, function(fflagJson)
+                                flagsJsonInput = fflagsSection:AddInput("fflags json", "{\"DFIntTaskSchedulerTargetFps\":\"240\"}", config.fflag_json, true, function(fflagJson)
                                     config.fflag_json = fflagJson
                                 end)
                             end
