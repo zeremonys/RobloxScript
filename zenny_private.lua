@@ -553,6 +553,9 @@ do
                                         local function h(v) cur = v == true; if cb then cb(cur) end end
                                         if type(e.OnChanged) == "function" then e:OnChanged(h)
                                         elseif e.ChangedCallback ~= nil then e.ChangedCallback = h end
+                                        -- NeverLose-compat: fire callback with initial value on creation
+                                        -- so handlers (parryState.set etc) initialize their runtime state
+                                        if cb then task.defer(cb, cur) end
                                         local w = {}
                                         function w:Value(v) cur = v == true; pcall(function() e:SetValue(cur) end) end
                                         function w:Set(v) self:Value(v) end
@@ -568,6 +571,7 @@ do
                                         local function h(v) cur = tonumber(v) or cur; if cb then cb(cur) end end
                                         if type(e.OnChanged) == "function" then e:OnChanged(h)
                                         elseif e.ChangedCallback ~= nil then e.ChangedCallback = h end
+                                        if cb then task.defer(cb, cur) end
                                         local w = {}
                                         function w:Value(v) cur = tonumber(v) or cur; pcall(function() e:SetValue(cur) end) end
                                         function w:Set(v) self:Value(v) end
@@ -584,6 +588,7 @@ do
                                         local function h(v) cur = v; if cb then cb(v) end end
                                         if type(e.OnChanged) == "function" then e:OnChanged(h)
                                         elseif e.ChangedCallback ~= nil then e.ChangedCallback = h end
+                                        if cb then task.defer(cb, cur) end
                                         local w = {}
                                         function w:Value(v) cur = v; pcall(function() e:SetValue(v) end) end
                                         function w:Set(v) self:Value(v) end
@@ -742,7 +747,7 @@ do
                             end
                             lib:Theme("white")
                        do
-                           local oxyWindow = lib:AddWindow("zenny private", "v1.3")
+                           local oxyWindow = lib:AddWindow("zenny private", "v1.4")
                            local combat = oxyWindow:AddTab("combat", "rbxassetid://10734951847")
                            visual2 = oxyWindow:AddTab("visual", "rbxassetid://10723346959")  -- ลบ local
                            misc2 = oxyWindow:AddTab("misc", "rbxassetid://10709797985")      -- ลบ local
