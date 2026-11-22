@@ -16,8 +16,8 @@ local CoreGui = cloneref and cloneref(game:GetService("CoreGui")) or game:GetSer
 local LP = Players.LocalPlayer
 
 -- ===== EDIT THESE URLS to your own hosted scripts =====
-local URL_ZENNY_V1      = "https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/zenny_v1.lua"
-local URL_ZENNY_PRIVATE = "https://raw.githubusercontent.com/YOUR_USER/YOUR_REPO/main/zenny_private.lua"
+local URL_ZENNY_V1      = "https://raw.githubusercontent.com/zeremonys/RobloxScript/main/zenny_v1.lua"
+local URL_ZENNY_PRIVATE = "https://raw.githubusercontent.com/zeremonys/RobloxScript/main/zenny_private.lua"
 
 local Selected = { Private = false, V1 = false }
 
