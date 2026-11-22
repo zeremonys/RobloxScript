@@ -742,7 +742,7 @@ do
                             end
                             lib:Theme("white")
                        do
-                           local oxyWindow = lib:AddWindow("zenny private", "v1.2")
+                           local oxyWindow = lib:AddWindow("zenny private", "v1.3")
                            local combat = oxyWindow:AddTab("combat", "rbxassetid://10734951847")
                            visual2 = oxyWindow:AddTab("visual", "rbxassetid://10723346959")  -- ลบ local
                            misc2 = oxyWindow:AddTab("misc", "rbxassetid://10709797985")      -- ลบ local
@@ -4534,6 +4534,227 @@ do
                         end)
                         serverHopTab:AddButton("hop now", function() hopNow(false) end)
                     end
+
+                    -- ===== V1 (fake-position / camera anchor spoof) =====
+                    do
+                        local v1Tab = misc2:AddSection("v1 fake-pos", "right")
+                        local RunService = game:GetService("RunService")
+                        local VISUALIZER_IMAGE_ID = "rbxassetid://126103687650989"
+                        local v1 = {
+                            enabled = config.v1_enabled or false,
+                            showVis = config.v1_show_visualizer ~= false,
+                            radius  = config.v1_radius or 14,
+                            physRateActive  = "15",
+                            physRateDefault = "60",
+                            velSpeed = 350,
+                            camSmooth = 24,
+                            camYOffset = 1.6,
+                            visSmooth = 18,
+                            stepInterval = 0.08,
+                            camAnchor = nil,
+                            visFolder = nil,
+                            visPart = nil,
+                            visBillboard = nil,
+                            visImage = nil,
+                            desiredPos = nil,
+                            smoothPos = nil,
+                            lastFake = nil,
+                            lastStep = nil,
+                            heartbeatConn = nil,
+                            renderConn = nil,
+                            charConn = nil,
+                        }
+
+                        local function getChar() return localPlayer.Character end
+                        local function getHRP(c) return c and (c.PrimaryPart or c:FindFirstChild("HumanoidRootPart")) end
+                        local function getHum(c) return c and c:FindFirstChildOfClass("Humanoid") end
+
+                        local function setPhysics(rate)
+                            pcall(function()
+                                if setfflag then setfflag("S2PhysicsSenderRate", tostring(rate)) end
+                            end)
+                        end
+
+                        local function buildAnchor()
+                            if v1.camAnchor and v1.camAnchor.Parent then return end
+                            local p = Instance.new("Part")
+                            p.Name = "ZennyV1CamAnchor"
+                            p.Size = Vector3.new(0.1, 0.1, 0.1)
+                            p.Transparency = 1; p.CanCollide = false
+                            p.CanTouch = false; p.CanQuery = false; p.Anchored = true
+                            p.Parent = workspace
+                            v1.camAnchor = p
+                        end
+
+                        local function buildVisualizer()
+                            if v1.visFolder and v1.visFolder.Parent then return end
+                            local f = Instance.new("Folder"); f.Name = "ZennyV1Vis"; f.Parent = workspace
+                            local part = Instance.new("Part")
+                            part.Name = "TargetPos"; part.Size = Vector3.new(0.2, 0.2, 0.2)
+                            part.Transparency = 1; part.CanCollide = false; part.CanTouch = false
+                            part.CanQuery = false; part.Anchored = true; part.Parent = f
+                            local bb = Instance.new("BillboardGui")
+                            bb.Name = "PositionBillboard"; bb.Adornee = part
+                            bb.Size = UDim2.fromScale(2.5, 2.5); bb.AlwaysOnTop = true
+                            bb.LightInfluence = 0; bb.Enabled = v1.showVis and v1.enabled; bb.Parent = f
+                            local img = Instance.new("ImageLabel")
+                            img.Size = UDim2.fromScale(1, 1); img.AnchorPoint = Vector2.new(0.5, 0.5)
+                            img.Position = UDim2.fromScale(0.5, 0.5); img.BackgroundTransparency = 1
+                            img.Image = VISUALIZER_IMAGE_ID; img.ImageColor3 = Color3.new(1, 1, 1)
+                            img.ImageTransparency = (v1.showVis and v1.enabled) and 0 or 1
+                            img.ScaleType = Enum.ScaleType.Fit; img.Parent = bb
+                            v1.visFolder, v1.visPart, v1.visBillboard, v1.visImage = f, part, bb, img
+                        end
+
+                        local function updateVisVisibility()
+                            if not v1.visBillboard then return end
+                            local c = getChar(); local hrp = getHRP(c); local hum = getHum(c)
+                            local alive = hrp and hum and hum.Health > 0
+                            local active = v1.showVis and v1.enabled and alive
+                            v1.visBillboard.Enabled = active
+                            v1.visImage.ImageTransparency = active and 0.08 or 1
+                        end
+
+                        local function restoreCam()
+                            v1.lastFake = nil
+                            local cam = workspace.CurrentCamera
+                            local hum = getHum(getChar())
+                            if cam and v1.camAnchor and cam.CameraSubject == v1.camAnchor and hum then
+                                cam.CameraSubject = hum
+                            end
+                            setPhysics(v1.physRateDefault)
+                            updateVisVisibility()
+                        end
+
+                        local function step()
+                            if not v1.enabled then restoreCam(); return end
+                            local c = getChar(); local hrp = getHRP(c); local hum = getHum(c)
+                            local cam = workspace.CurrentCamera
+                            if not hrp or not hum or hum.Health <= 0 or not cam then
+                                v1.lastFake = nil
+                                if cam and v1.camAnchor and cam.CameraSubject == v1.camAnchor and hum then
+                                    cam.CameraSubject = hum
+                                end
+                                return
+                            end
+                            local baseCF = hrp.CFrame + Vector3.new(0, 0.01, 0)
+                            hrp.CFrame = baseCF
+                            v1.lastFake = baseCF.Position
+                            if v1.camAnchor and v1.camAnchor.Parent then
+                                v1.camAnchor.CFrame = CFrame.new(baseCF.Position + Vector3.new(0, v1.camYOffset, 0))
+                            end
+                            if cam.CameraSubject ~= v1.camAnchor then cam.CameraSubject = v1.camAnchor end
+                            setPhysics(v1.physRateActive)
+
+                            local t = tick()
+                            local stepIdx = math.floor(t / v1.stepInterval) % 3
+                            local r, s = v1.radius, v1.velSpeed
+                            local lv, rv = baseCF.LookVector, baseCF.RightVector
+                            local offset, vel
+                            if stepIdx == 0 then
+                                offset = (-rv * r) + (lv * (r * 0.5)); vel = -rv * s
+                            elseif stepIdx == 1 then
+                                offset = (rv * r) + (lv * (r * 0.5)); vel = rv * s
+                            else
+                                offset = -lv * r; vel = -lv * s
+                            end
+                            local origCF = baseCF
+                            local origVel = hrp.AssemblyLinearVelocity
+                            local targetCF = origCF * CFrame.new(offset)
+
+                            if v1.showVis then
+                                v1.desiredPos = targetCF.Position
+                                if stepIdx ~= v1.lastStep then
+                                    v1.lastStep = stepIdx
+                                    local col = stepIdx == 0 and Color3.new(1,1,1)
+                                              or stepIdx == 1 and Color3.fromRGB(200,200,200)
+                                              or Color3.fromRGB(150,150,150)
+                                    if v1.visImage then
+                                        pcall(function() v1.visImage.ImageColor3 = col end)
+                                    end
+                                end
+                            end
+
+                            hrp.CFrame = targetCF
+                            hrp.AssemblyLinearVelocity = vel
+                            RunService.RenderStepped:Wait()
+                            if hrp and hrp.Parent then
+                                hrp.CFrame = origCF
+                                hrp.AssemblyLinearVelocity = origVel
+                                v1.lastFake = origCF.Position
+                            end
+                        end
+
+                        local function renderStep(dt)
+                            -- fake camera smoothing
+                            if v1.enabled and v1.camAnchor and v1.camAnchor.Parent then
+                                local cam = workspace.CurrentCamera
+                                local hrp = getHRP(getChar()); local hum = getHum(getChar())
+                                if hrp and hum and hum.Health > 0 then
+                                    local anchorPos = (v1.lastFake or hrp.Position) + Vector3.new(0, v1.camYOffset, 0)
+                                    local a = 1 - math.exp(-v1.camSmooth * math.clamp(dt or 0.016, 0, 0.1))
+                                    v1.camAnchor.CFrame = CFrame.new(v1.camAnchor.Position:Lerp(anchorPos, a))
+                                    if cam and cam.CameraSubject ~= v1.camAnchor then cam.CameraSubject = v1.camAnchor end
+                                end
+                            end
+                            -- visualizer smoothing
+                            if v1.enabled and v1.showVis and v1.visPart and v1.desiredPos then
+                                local a = 1 - math.exp(-v1.visSmooth * math.clamp(dt or 0.016, 0, 0.1))
+                                v1.smoothPos = v1.smoothPos and v1.smoothPos:Lerp(v1.desiredPos, a) or v1.desiredPos
+                                v1.visPart.CFrame = CFrame.new(v1.smoothPos)
+                            end
+                        end
+
+                        local function enableV1()
+                            buildAnchor(); buildVisualizer()
+                            if not v1.heartbeatConn then v1.heartbeatConn = RunService.Heartbeat:Connect(step) end
+                            if not v1.renderConn then v1.renderConn = RunService.RenderStepped:Connect(renderStep) end
+                            if not v1.charConn then
+                                v1.charConn = localPlayer.CharacterAdded:Connect(function()
+                                    v1.lastFake = nil; v1.smoothPos = nil
+                                    task.wait(0.1)
+                                    if v1.enabled then
+                                        local hrp = getHRP(getChar())
+                                        if hrp and v1.camAnchor and v1.camAnchor.Parent then
+                                            v1.camAnchor.CFrame = CFrame.new(hrp.Position + Vector3.new(0, v1.camYOffset, 0))
+                                            v1.lastFake = hrp.Position
+                                        end
+                                        updateVisVisibility()
+                                    end
+                                end)
+                            end
+                            updateVisVisibility()
+                        end
+
+                        local function disableV1()
+                            if v1.heartbeatConn then v1.heartbeatConn:Disconnect(); v1.heartbeatConn = nil end
+                            if v1.renderConn then v1.renderConn:Disconnect(); v1.renderConn = nil end
+                            if v1.charConn then v1.charConn:Disconnect(); v1.charConn = nil end
+                            restoreCam()
+                            if v1.visBillboard then v1.visBillboard.Enabled = false end
+                        end
+
+                        v1Tab:AddToggle("enable v1", v1.enabled, function(on)
+                            v1.enabled = on
+                            config.v1_enabled = on
+                            configStorage.save()
+                            if on then enableV1() else disableV1() end
+                            notificationService:notify({ title = "v1", content = on and "enabled" or "disabled", duration = 2 })
+                        end)
+                        v1Tab:AddToggle("show visualizer", v1.showVis, function(on)
+                            v1.showVis = on
+                            config.v1_show_visualizer = on
+                            configStorage.save()
+                            updateVisVisibility()
+                        end)
+                        v1Tab:AddSlider("range", 1, 50, v1.radius, function(val)
+                            v1.radius = math.clamp(math.round(val), 1, 50)
+                            config.v1_radius = v1.radius
+                        end)
+
+                        if v1.enabled then enableV1() end
+                    end
+
                     return
                 end
                 while true do
