@@ -528,7 +528,185 @@ do
                                     configStorage.save()
                                 end
                             end)
-                            lib = loadstring(game:HttpGet("https://raw.githubusercontent.com/riqegopeek/NeverLose/refs/heads/main/src/interface.luau"))()
+                            -- ═══════════════════════════════════════════════════════════
+                            -- FLUENT (dawid-scripts) — Win11 acrylic UI
+                            -- adapter preserves oxymod's lib:AddWindow / tab:AddSection / section:AddToggle etc API
+                            -- ═══════════════════════════════════════════════════════════
+                            do
+                                local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+                                local function makeId(prefix, label, scope)
+                                    local clean = tostring(label or "item"):lower():gsub("[^%w_]+", "_")
+                                    local prefixScope = tostring(scope or "root"):lower():gsub("[^%w_]+", "_")
+                                    return string.format("zenny_%s_%s_%s", prefixScope, tostring(prefix), clean)
+                                end
+                                local function resolveKeyCode(key)
+                                    if typeof(key) == "EnumItem" then return key.Name
+                                    elseif type(key) == "string" and Enum.KeyCode[key] then return key end
+                                    return "E"
+                                end
+                                local function wrapCtl(fc, scope)
+                                    local t = {}
+                                    local function addToggle(_, title, def, cb)
+                                        local id = makeId("toggle", title, scope)
+                                        local cur = def == true
+                                        local e = fc:AddToggle(id, { Title = tostring(title or ""), Default = cur })
+                                        local function h(v) cur = v == true; if cb then cb(cur) end end
+                                        if type(e.OnChanged) == "function" then e:OnChanged(h)
+                                        elseif e.ChangedCallback ~= nil then e.ChangedCallback = h end
+                                        local w = {}
+                                        function w:Value(v) cur = v == true; pcall(function() e:SetValue(cur) end) end
+                                        function w:Set(v) self:Value(v) end
+                                        function w:Get() return cur end
+                                        w._raw = e; return w
+                                    end
+                                    local function addSlider(_, title, mn, mx, def, cb)
+                                        local id = makeId("slider", title, scope)
+                                        local cur = tonumber(def) or tonumber(mn) or 0
+                                        local e = fc:AddSlider(id, { Title = tostring(title or ""),
+                                            Min = tonumber(mn) or 0, Max = tonumber(mx) or 100,
+                                            Default = cur, Rounding = 0 })
+                                        local function h(v) cur = tonumber(v) or cur; if cb then cb(cur) end end
+                                        if type(e.OnChanged) == "function" then e:OnChanged(h)
+                                        elseif e.ChangedCallback ~= nil then e.ChangedCallback = h end
+                                        local w = {}
+                                        function w:Value(v) cur = tonumber(v) or cur; pcall(function() e:SetValue(cur) end) end
+                                        function w:Set(v) self:Value(v) end
+                                        function w:Get() return cur end
+                                        w._raw = e; return w
+                                    end
+                                    local function addDropdown(_, title, vals, def, cb)
+                                        local id = makeId("dropdown", title, scope)
+                                        local list = {}
+                                        if type(vals) == "table" then for i,v in ipairs(vals) do list[i] = v end end
+                                        local cur = def or list[1]
+                                        local e = fc:AddDropdown(id, { Title = tostring(title or ""),
+                                            Values = list, Multi = false, Default = cur })
+                                        local function h(v) cur = v; if cb then cb(v) end end
+                                        if type(e.OnChanged) == "function" then e:OnChanged(h)
+                                        elseif e.ChangedCallback ~= nil then e.ChangedCallback = h end
+                                        local w = {}
+                                        function w:Value(v) cur = v; pcall(function() e:SetValue(v) end) end
+                                        function w:Set(v) self:Value(v) end
+                                        function w:Get() return cur end
+                                        function w:Refresh(nv)
+                                            if type(nv) ~= "table" then return end
+                                            local c = {}; for i,v in ipairs(nv) do c[i] = v end
+                                            if type(e.SetValues) == "function" then pcall(function() e:SetValues(c) end)
+                                            elseif e.Values then e.Values = c end
+                                        end
+                                        w._raw = e; return w
+                                    end
+                                    local function addButton(_, title, cb)
+                                        local e = fc:AddButton({ Title = tostring(title or ""),
+                                            Callback = function() if cb then cb() end end })
+                                        return { _raw = e }
+                                    end
+                                    local function addLabel(_, text)
+                                        local e = fc:AddParagraph({ Title = tostring(text or ""), Content = "" })
+                                        return { _raw = e, Set = function(_, nt)
+                                            pcall(function()
+                                                if type(e.SetTitle) == "function" then e:SetTitle(tostring(nt or ""))
+                                                elseif e.Title then e.Title = tostring(nt or "") end
+                                            end)
+                                        end }
+                                    end
+                                    local function addInput(_, title, ph, def, finishedOnly, cb)
+                                        local id = makeId("input", title, scope)
+                                        local cur = tostring(def or "")
+                                        local e = fc:AddInput(id, { Title = tostring(title or ""),
+                                            Default = cur, Placeholder = tostring(ph or ""),
+                                            Numeric = false, Finished = finishedOnly ~= false,
+                                            Callback = function(v) cur = tostring(v or ""); if cb then cb(cur) end end })
+                                        return { _raw = e,
+                                            get = function() return cur end,
+                                            set = function(_, nv, fire)
+                                                local s = tostring(nv or ""); cur = s
+                                                pcall(function()
+                                                    if type(e.SetValue) == "function" then e:SetValue(s)
+                                                    elseif e.Value ~= nil then e.Value = s end
+                                                end)
+                                                if fire and cb then cb(s) end
+                                            end }
+                                    end
+                                    local function addKeybind(_, title, defKey, cb)
+                                        local id = makeId("keybind", title, scope)
+                                        local curName = resolveKeyCode(defKey)
+                                        local function h(nk)
+                                            local rn = resolveKeyCode(nk)
+                                            if rn ~= curName then
+                                                curName = rn
+                                                if cb then
+                                                    local ek = typeof(nk) == "EnumItem" and nk or Enum.KeyCode[rn]
+                                                    if ek then cb(ek) end
+                                                end
+                                            end
+                                        end
+                                        local e = fc:AddKeybind(id, { Title = tostring(title or ""),
+                                            Mode = "Toggle", Default = curName })
+                                        if type(e.OnChanged) == "function" then e:OnChanged(h)
+                                        else pcall(function() e.ChangedCallback = h end) end
+                                        return { _raw = e,
+                                            Value = function(_, k) curName = resolveKeyCode(k); pcall(function() e:SetValue(curName) end) end,
+                                            Get = function() return Enum.KeyCode[curName] or defKey end }
+                                    end
+                                    t.AddToggle   = addToggle;   t.CreateToggle   = addToggle
+                                    t.AddSlider   = addSlider;   t.CreateSlider   = addSlider
+                                    t.AddDropdown = addDropdown; t.CreateDropdown = addDropdown
+                                    t.AddButton   = addButton;   t.CreateButton   = addButton
+                                    t.AddLabel    = addLabel;    t.CreateLabel    = addLabel
+                                    t.AddInput    = addInput;    t.CreateInput    = addInput
+                                    t.AddKeybind  = addKeybind;  t.CreateKeybind  = addKeybind
+                                    return t
+                                end
+                                local function wrapTab(ft, title)
+                                    local tabScope = tostring(title or "tab")
+                                    local tw = wrapCtl(ft, tabScope)
+                                    tw.AddSection = function(_, st, side)
+                                        local lbl = tostring(st or "section")
+                                        local suf = side and ("_" .. tostring(side)) or ""
+                                        local ok, fs = pcall(function() return ft:AddSection(lbl) end)
+                                        local container = (ok and fs and type(fs.AddToggle) == "function") and fs or ft
+                                        return wrapCtl(container, tabScope .. "_" .. lbl .. suf)
+                                    end
+                                    tw.CreateSection = tw.AddSection
+                                    return tw
+                                end
+                                local adapter = { Fluent = Fluent, _theme = "dark" }
+                                function adapter:Theme(name) self._theme = name end
+                                function adapter:CreateWindow(title, subTitle)
+                                    local themeName = (tostring(self._theme or ""):lower() == "white") and "Light" or "Dark"
+                                    local ok, win = pcall(function()
+                                        return Fluent:CreateWindow({ Title = tostring(title or "zenny private"),
+                                            SubTitle = tostring(subTitle or ""), TabWidth = 160,
+                                            Size = UDim2.fromOffset(580, 460), Acrylic = true,
+                                            Theme = themeName, MinimizeKey = Enum.KeyCode.RightControl })
+                                    end)
+                                    if not ok or not win then
+                                        win = Fluent:CreateWindow({ Title = tostring(title or "zenny private"),
+                                            SubTitle = tostring(subTitle or ""), TabWidth = 160,
+                                            Size = UDim2.fromOffset(580, 460), Acrylic = false,
+                                            Theme = themeName, MinimizeKey = Enum.KeyCode.RightControl })
+                                    end
+                                    local ww = { _raw = win }
+                                    function ww:Destroy() pcall(function() win:Destroy() end) end
+                                    local function createTab(_, title2, icon)
+                                        local ft = win:AddTab({ Title = tostring(title2 or "Tab"),
+                                            Icon = type(icon) == "string" and icon or "" })
+                                        return wrapTab(ft, title2)
+                                    end
+                                    ww.CreateTab = createTab
+                                    ww.AddTab = createTab
+                                    return ww
+                                end
+                                function adapter:AddWindow(title, subTitle) return self:CreateWindow(title, subTitle) end
+                                function adapter:Notification()
+                                    return { Notify = function(_, _k, title, content, dur)
+                                        Fluent:Notify({ Title = tostring(title or "Notification"),
+                                            Content = tostring(content or ""), Duration = tonumber(dur) or 3 })
+                                    end }
+                                end
+                                lib = adapter
+                            end
                             lib:Theme("white")
                        do
                            local oxyWindow = lib:AddWindow("zenny private", "v1.0")
