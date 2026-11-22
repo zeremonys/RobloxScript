@@ -747,7 +747,7 @@ do
                             end
                             lib:Theme("white")
                        do
-                           local oxyWindow = lib:AddWindow("zenny private", "v1.5")
+                           local oxyWindow = lib:AddWindow("zenny private", "v1.6")
                            local combat = oxyWindow:AddTab("combat", "rbxassetid://10734951847")
                            visual2 = oxyWindow:AddTab("visual", "rbxassetid://10723346959")  -- ลบ local
                            misc2 = oxyWindow:AddTab("misc", "rbxassetid://10709797985")      -- ลบ local
@@ -4780,11 +4780,11 @@ do
                             return nil
                         end
 
-                        local function fireRemote(r, ...)
+                        local function fireRemote(r)
                             if not r then return false end
                             local ok = pcall(function()
-                                if r:IsA("RemoteEvent") then r:FireServer(...)
-                                elseif r:IsA("RemoteFunction") then r:InvokeServer(...) end
+                                if r:IsA("RemoteEvent") then r:FireServer()
+                                elseif r:IsA("RemoteFunction") then r:InvokeServer() end
                             end)
                             return ok
                         end
