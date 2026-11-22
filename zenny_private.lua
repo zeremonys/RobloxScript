@@ -672,7 +672,13 @@ do
                                         local function ensureHeader()
                                             if not headerAdded then
                                                 headerAdded = true
-                                                pcall(function() ft:AddSection(lbl) end)
+                                                -- try AddSection first; fall back to AddParagraph (always works)
+                                                local ok = pcall(function() ft:AddSection(lbl) end)
+                                                if not ok then
+                                                    pcall(function()
+                                                        ft:AddParagraph({ Title = lbl, Content = "" })
+                                                    end)
+                                                end
                                             end
                                         end
                                         local sw = wrapCtl(ft, tabScope .. "_" .. lbl .. suf)
@@ -736,7 +742,7 @@ do
                             end
                             lib:Theme("white")
                        do
-                           local oxyWindow = lib:AddWindow("zenny private", "v1.0")
+                           local oxyWindow = lib:AddWindow("zenny private", "v1.1")
                            local combat = oxyWindow:AddTab("combat", "rbxassetid://10734951847")
                            visual2 = oxyWindow:AddTab("visual", "rbxassetid://10723346959")  -- ลบ local
                            misc2 = oxyWindow:AddTab("misc", "rbxassetid://10709797985")      -- ลบ local
