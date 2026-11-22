@@ -664,9 +664,36 @@ do
                                     tw.AddSection = function(_, st, side)
                                         local lbl = tostring(st or "section")
                                         local suf = side and ("_" .. tostring(side)) or ""
-                                        local ok, fs = pcall(function() return ft:AddSection(lbl) end)
-                                        local container = (ok and fs and type(fs.AddToggle) == "function") and fs or ft
-                                        return wrapCtl(container, tabScope .. "_" .. lbl .. suf)
+                                        -- lazy header: don't call Fluent's AddSection until first control
+                                        -- is added. Fluent stacks items under the most recent section
+                                        -- header, so inserting the header right before its first control
+                                        -- keeps controls visually grouped under their correct section.
+                                        local headerAdded = false
+                                        local function ensureHeader()
+                                            if not headerAdded then
+                                                headerAdded = true
+                                                pcall(function() ft:AddSection(lbl) end)
+                                            end
+                                        end
+                                        local sw = wrapCtl(ft, tabScope .. "_" .. lbl .. suf)
+                                        for _, methodName in ipairs({
+                                            "AddToggle", "CreateToggle",
+                                            "AddSlider", "CreateSlider",
+                                            "AddDropdown", "CreateDropdown",
+                                            "AddButton", "CreateButton",
+                                            "AddLabel", "CreateLabel",
+                                            "AddInput", "CreateInput",
+                                            "AddKeybind", "CreateKeybind",
+                                        }) do
+                                            local original = sw[methodName]
+                                            if type(original) == "function" then
+                                                sw[methodName] = function(self, ...)
+                                                    ensureHeader()
+                                                    return original(self, ...)
+                                                end
+                                            end
+                                        end
+                                        return sw
                                     end
                                     tw.CreateSection = tw.AddSection
                                     return tw
