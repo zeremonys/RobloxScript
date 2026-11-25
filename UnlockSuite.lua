@@ -111,14 +111,10 @@ end
 
 
     do
-        local savedLastSword = loadLastEquippedSword()
-        local savedLastExplosion = loadLastEquippedExplosion()
-        getgenv().skinChanger = getgenv().skinChanger or savedLastSword ~= ""
-        getgenv().swordModel = type(getgenv().swordModel) == "string" and getgenv().swordModel ~= "" and getgenv().swordModel or savedLastSword
-        getgenv().swordAnimations = type(getgenv().swordAnimations) == "string" and getgenv().swordAnimations ~= "" and getgenv().swordAnimations or savedLastSword
-        getgenv().swordFX = type(getgenv().swordFX) == "string" and getgenv().swordFX ~= "" and getgenv().swordFX or savedLastSword
-        getgenv().explosionChanger = getgenv().explosionChanger or savedLastExplosion ~= ""
-        getgenv().explosionFX = type(getgenv().explosionFX) == "string" and getgenv().explosionFX ~= "" and getgenv().explosionFX or savedLastExplosion
+        -- DISABLED: don't auto-force last-equipped sword/explosion on load.
+        -- Leaving these globals unset preserves whatever the player has equipped in-game.
+        -- The shop-click equip flow (equipShopItem) still sets them when the user
+        -- actively picks something from the unlocked shop.
     end
 
     task.spawn(function()
@@ -7034,8 +7030,9 @@ end
 local function unlockShopCards(shop)
     if getgenv()._usStandaloneUnlockLoop then return end
     getgenv()._usStandaloneUnlockLoop = true
-    getgenv().skinChanger = true
-    getgenv().explosionChanger = true
+    -- NOTE: don't force skinChanger / explosionChanger true here.
+    -- They get enabled only when the user actually clicks an item in the shop (equipShopItem).
+    -- Keeping them unset preserves the player's currently equipped sword on load.
 
     task.spawn(function()
         while shop.Parent do
