@@ -747,7 +747,7 @@ do
                             end
                             lib:Theme("white")
                        do
-                           local oxyWindow = lib:AddWindow("zenny private", "v2.2")
+                           local oxyWindow = lib:AddWindow("zenny private", "v1.6")
                            local combat = oxyWindow:AddTab("combat", "rbxassetid://10734951847")
                            visual2 = oxyWindow:AddTab("visual", "rbxassetid://10723346959")  -- ลบ local
                            misc2 = oxyWindow:AddTab("misc", "rbxassetid://10709797985")      -- ลบ local
@@ -4426,119 +4426,6 @@ do
                         if config.anti_afk then startLoop() end
                     end
 
-                    -- ===== AUTO SERVER HOP =====
-                    do
-                        local serverHopTab = misc2:AddSection("server hop", "right")
-                        local hopState = { running = false, hopping = false }
-
-                        local function fetchServers()
-                            local servers = {}
-                            local cursor = nil
-                            local pages = 0
-                            repeat
-                                local url = "https://games.roblox.com/v1/games/" .. tostring(game.PlaceId) .. "/servers/Public?sortOrder=Asc&limit=100"
-                                if cursor and cursor ~= "" then url = url .. "&cursor=" .. cursor end
-                                local ok, resp = pcall(function() return game:HttpGet(url) end)
-                                if not ok then break end
-                                local decOk, dec = pcall(function() return httpService:JSONDecode(resp) end)
-                                if not decOk or type(dec) ~= "table" or type(dec.data) ~= "table" then break end
-                                for _, srv in ipairs(dec.data) do
-                                    table.insert(servers, srv)
-                                end
-                                cursor = dec.nextPageCursor
-                                pages = pages + 1
-                            until not cursor or cursor == "" or pages >= 4
-                            return servers
-                        end
-
-                        local function pickBest(servers, minPlayers, maxPing)
-                            local candidates = {}
-                            for _, srv in ipairs(servers) do
-                                if srv.id ~= game.JobId
-                                   and type(srv.playing) == "number"
-                                   and type(srv.maxPlayers) == "number"
-                                   and srv.playing >= minPlayers
-                                   and srv.playing < srv.maxPlayers then
-                                    local p = srv.ping or 999
-                                    if p <= maxPing then
-                                        table.insert(candidates, srv)
-                                    end
-                                end
-                            end
-                            -- sort by ping ascending (lowest first), then by playing desc (prefer fuller)
-                            table.sort(candidates, function(a, b)
-                                local pa, pb = a.ping or 999, b.ping or 999
-                                if pa ~= pb then return pa < pb end
-                                return (a.playing or 0) > (b.playing or 0)
-                            end)
-                            return candidates[1]
-                        end
-
-                        local function hopNow(silent)
-                            if hopState.hopping then return end
-                            hopState.hopping = true
-                            local minPlayers = config.hop_min_players or 5
-                            local maxPing = config.hop_max_ping or 200
-                            if not silent then
-                                notificationService:notify({ title = "server hop", content = "scanning servers...", duration = 2 })
-                            end
-                            local servers = fetchServers()
-                            if #servers == 0 then
-                                notificationService:notify({ title = "server hop", content = "no servers returned (API blocked?)", duration = 3 })
-                                hopState.hopping = false
-                                return
-                            end
-                            local best = pickBest(servers, minPlayers, maxPing)
-                            if not best then
-                                notificationService:notify({ title = "server hop", content = "no server matches filter (relax ping/min players)", duration = 3 })
-                                hopState.hopping = false
-                                return
-                            end
-                            notificationService:notify({
-                                title = "server hop",
-                                content = string.format("hopping: %d/%d  ping %dms", best.playing, best.maxPlayers, best.ping or 0),
-                                duration = 2,
-                            })
-                            task.wait(0.3)
-                            if not pcall(teleportService.TeleportToPlaceInstance, teleportService, game.PlaceId, best.id, localPlayer) then
-                                game:GetService("ExperienceService"):LaunchExperience({ placeId = game.PlaceId, gameInstanceId = best.id })
-                            end
-                            hopState.hopping = false
-                        end
-
-                        serverHopTab:AddSlider("min players", 1, 12, config.hop_min_players or 5, function(val)
-                            config.hop_min_players = val
-                        end)
-                        serverHopTab:AddSlider("max ping (ms)", 50, 500, config.hop_max_ping or 200, function(val)
-                            config.hop_max_ping = val
-                        end)
-                        serverHopTab:AddSlider("check interval (s)", 10, 300, config.hop_interval or 30, function(val)
-                            config.hop_interval = val
-                        end)
-                        serverHopTab:AddToggle("auto server hop", config.auto_hop or false, function(enabled)
-                            config.auto_hop = enabled
-                            if enabled and not hopState.running then
-                                hopState.running = true
-                                task.spawn(function()
-                                    while hopState.running and config.auto_hop do
-                                        local Players = game:GetService("Players")
-                                        local currentPlayers = #Players:GetPlayers()
-                                        local minPlayers = config.hop_min_players or 5
-                                        if currentPlayers < minPlayers then
-                                            hopNow(true)
-                                        end
-                                        task.wait(config.hop_interval or 30)
-                                    end
-                                    hopState.running = false
-                                end)
-                                notificationService:notify({ title = "server hop", content = "auto hop ON", duration = 2 })
-                            elseif not enabled then
-                                hopState.running = false
-                                notificationService:notify({ title = "server hop", content = "auto hop OFF", duration = 2 })
-                            end
-                        end)
-                        serverHopTab:AddButton("hop now", function() hopNow(false) end)
-                    end
 
                     -- ===== V1 (fake-position / camera anchor spoof) =====
                     do
