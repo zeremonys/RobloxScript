@@ -136,6 +136,7 @@ do
                                     }
                                     configStorage.has_saved = false
                                     configStorage.defaults = {
+                                        config_last_profile = "default",
                                         accuracy = 100,
                                         curve_keybind = false,
                                         manual_notify = false,
@@ -752,6 +753,7 @@ do
                            visual2 = oxyWindow:AddTab("visual", "rbxassetid://10723346959")  -- ลบ local
                            misc2 = oxyWindow:AddTab("misc", "rbxassetid://10709797985")      -- ลบ local
                            fflagsTab = oxyWindow:AddTab("fflags", "rbxassetid://10723364435")
+                           configTab = oxyWindow:AddTab("config", "rbxassetid://10723374228")
                            parrySection = combat:AddSection("parry", "left")
                            curve = combat:AddSection("curve", "right")
                            spam = combat:AddSection("spam", "left")
@@ -1051,6 +1053,144 @@ do
                             end)
                         end
                     end
+                    -- ================================================================
+                    -- CONFIG PROFILES TAB
+                    -- Save/load/delete named snapshots of `config` to zenny_private/configs/<name>.json
+                    -- ================================================================
+                    do
+                        local profilesFolder = configStorage.folder .. "/configs"
+                        local configSection = configTab:AddSection("profiles", "left")
+
+                        local function ensureProfilesFolder()
+                            pcall(function()
+                                if not (type(isfolder) == "function" and isfolder(configStorage.folder)) then
+                                    pcall(makefolder, configStorage.folder)
+                                end
+                                if not (type(isfolder) == "function" and isfolder(profilesFolder)) then
+                                    pcall(makefolder, profilesFolder)
+                                end
+                            end)
+                        end
+
+                        local function sanitizeName(n)
+                            n = tostring(n or ""):gsub("[^%w%-_ ]", ""):gsub("^%s+", ""):gsub("%s+$", "")
+                            return n
+                        end
+
+                        local function profilePath(name)
+                            return profilesFolder .. "/" .. name .. ".json"
+                        end
+
+                        local function listProfiles()
+                            ensureProfilesFolder()
+                            local out = {}
+                            if type(listfiles) ~= "function" then return out end
+                            local ok, files = pcall(listfiles, profilesFolder)
+                            if not ok or type(files) ~= "table" then return out end
+                            for _, path in ipairs(files) do
+                                local name = tostring(path):match("([^/\\]+)%.json$")
+                                if name then table.insert(out, name) end
+                            end
+                            table.sort(out, function(a, b) return a:lower() < b:lower() end)
+                            return out
+                        end
+
+                        local function optionsOrPlaceholder()
+                            local opts = listProfiles()
+                            if #opts == 0 then opts = { "(no saved configs)" } end
+                            return opts
+                        end
+
+                        local function isRealOption(v)
+                            return type(v) == "string" and v ~= "(no saved configs)" and v ~= ""
+                        end
+
+                        local function notify(ok, msg)
+                            notificationService:notify({
+                                title = ok and "config" or "config error",
+                                content = tostring(msg),
+                                duration = 3,
+                            })
+                        end
+
+                        local configNameInput = configSection:AddInput("profile name", "default", config.config_last_profile or "default", true, function(v)
+                            config.config_last_profile = sanitizeName(v)
+                        end)
+
+                        local profilesDropdown
+                        local function refreshDropdown(select)
+                            local opts = optionsOrPlaceholder()
+                            profilesDropdown:Refresh(opts)
+                            local pick = (type(select) == "string" and findInTable(opts, select)) and select or opts[1]
+                            profilesDropdown:Value(pick)
+                        end
+
+                        do
+                            local opts = optionsOrPlaceholder()
+                            local initPick = (type(config.config_last_profile) == "string" and findInTable(opts, config.config_last_profile)) and config.config_last_profile or opts[1]
+                            profilesDropdown = configSection:AddDropdown("saved configs", opts, initPick, function(v)
+                                if isRealOption(v) then
+                                    configNameInput:set(v, false)
+                                end
+                            end)
+                        end
+
+                        configSection:AddButton("save current", function()
+                            if type(writefile) ~= "function" then notify(false, "writefile unavailable"); return end
+                            local name = sanitizeName(configNameInput:get())
+                            if name == "" then notify(false, "enter a profile name"); return end
+                            ensureProfilesFolder()
+                            local snap = {}
+                            for k, _ in pairs(configStorage.defaults) do
+                                snap[k] = configStorage.copy(config[k])
+                            end
+                            local okEnc, encoded = pcall(function() return httpService:JSONEncode(snap) end)
+                            if not okEnc then notify(false, "encode failed"); return end
+                            local okWrite = pcall(writefile, profilePath(name), encoded)
+                            if not okWrite then notify(false, "writefile failed"); return end
+                            config.config_last_profile = name
+                            configStorage.save()
+                            refreshDropdown(name)
+                            notify(true, "saved '" .. name .. "'")
+                        end)
+
+                        configSection:AddButton("load selected", function()
+                            if type(readfile) ~= "function" then notify(false, "readfile unavailable"); return end
+                            local pick = profilesDropdown:Get()
+                            if not isRealOption(pick) then notify(false, "no profile selected"); return end
+                            local okRead, encoded = pcall(readfile, profilePath(pick))
+                            if not okRead then notify(false, "readfile failed"); return end
+                            local okDec, data = pcall(function() return httpService:JSONDecode(encoded) end)
+                            if not okDec or type(data) ~= "table" then notify(false, "invalid JSON"); return end
+                            for k, def in pairs(configStorage.defaults) do
+                                local v = data[k]
+                                if type(v) == type(def) then
+                                    config[k] = type(v) == "table" and configStorage.copy(v) or v
+                                end
+                            end
+                            config.config_last_profile = pick
+                            configStorage.save()
+                            configNameInput:set(pick, false)
+                            notify(true, "loaded '" .. pick .. "' - rejoin or re-toggle features for full effect")
+                        end)
+
+                        configSection:AddButton("delete selected", function()
+                            local pick = profilesDropdown:Get()
+                            if not isRealOption(pick) then notify(false, "no profile selected"); return end
+                            if type(delfile) ~= "function" then notify(false, "delfile unavailable"); return end
+                            local okDel = pcall(delfile, profilePath(pick))
+                            if not okDel then notify(false, "delete failed"); return end
+                            refreshDropdown()
+                            notify(true, "deleted '" .. pick .. "'")
+                        end)
+
+                        configSection:AddButton("refresh list", function()
+                            refreshDropdown(config.config_last_profile)
+                        end)
+
+                        configSection:AddLabel("save/load named snapshots of your whole config")
+                    end
+
                     local runtimeConnections, ballState, touchEnabled, keyboardEnabled, gamepadEnabled, spamController, abilityEspState, triggerbotState
                     do
                         local inventoryUnlockManager, curveController, swordAnimationState, parryController, helperFunction
@@ -1136,6 +1276,7 @@ do
                                     break
                                 end
                                 eventCapture.polygon = function(inputValue)
+                                    if not eventCapture.token_fn then return nil end
                                     local primaryValue = 100
                                     local secondaryValue = tostring(floorValue(Workspace:GetServerTimeNow() * primaryValue))
                                     local tertiaryValue = eventCapture.token_fn(inputValue, "TIME")
@@ -1364,6 +1505,44 @@ do
                                         local primaryValue = 1000
                                         return createCFrame(position2, position + createVector3(randomValue(-1000, 1000), randomValue(-350, 1000), randomValue(-1000, primaryValue)))
                                     end
+                                    if curveMethod == "insane" then
+                                        -- Maximum chaos: enormous random offset in every axis + random roll so
+                                        -- the ball spins while flying off. Different trajectory every parry.
+                                        local pos = humanoidRootPart.Position
+                                        local target = pos + createVector3(
+                                            randomValue(-8000, 8000),
+                                            randomValue(-3000, 8000),
+                                            randomValue(-8000, 8000))
+                                        local base = createCFrame(pos, target)
+                                        local rollAngle = math.rad(randomValue(-180, 180))
+                                        return base * CFrame.Angles(0, 0, rollAngle)
+                                    end
+                                    if curveMethod == "sky" then
+                                        -- shoot straight up, extreme magnitude so the ball leaves the map
+                                        return createCFrame(humanoidRootPart.Position, humanoidRootPart.Position + createVector3(0, 10000, 0))
+                                    end
+                                    if curveMethod == "spiral" then
+                                        -- rotating direction based on current tick so each parry sends ball a
+                                        -- different way along a spiral path
+                                        local pos = humanoidRootPart.Position
+                                        local t = tick() * 4
+                                        local dir = createVector3(math.cos(t) * 5000, math.sin(t * 0.7) * 3000 + 500, math.sin(t) * 5000)
+                                        local base = createCFrame(pos, pos + dir)
+                                        return base * CFrame.Angles(math.rad(randomValue(-90, 90)), 0, math.rad(t * 30 % 360))
+                                    end
+                                    if curveMethod == "chaos" then
+                                        -- New direction AND random roll AND random pitch every single call. Most unpredictable.
+                                        local pos = humanoidRootPart.Position
+                                        local target = pos + createVector3(
+                                            randomValue(-10000, 10000),
+                                            randomValue(-5000, 10000),
+                                            randomValue(-10000, 10000))
+                                        local base = createCFrame(pos, target)
+                                        return base * CFrame.Angles(
+                                            math.rad(randomValue(-180, 180)),
+                                            math.rad(randomValue(-180, 180)),
+                                            math.rad(randomValue(-180, 180)))
+                                    end
                                     return cFrame
                                 end
                                 curveController.sync_dropdown = function(inputValue)
@@ -1566,19 +1745,33 @@ do
                                         end
                                     end
                                     local fired = false
-                                    if next(eventCapture.captured) ~= nil then
+                                    -- lazy retry: PRY upvalue may only show up in getgc after the Blade Ball
+                                    -- client loads its own scripts; re-scan here if token_fn is still missing.
+                                    if not eventCapture.token_fn then
+                                        for _, pv in getgc(true) do
+                                            if type(pv) == "function" and debug.info(pv, "s"):find("PRY", 1, true) then
+                                                for _, uv in debug.getupvalues(pv) do
+                                                    if type(uv) == "function" then eventCapture.token_fn = uv; break end
+                                                end
+                                                if eventCapture.token_fn then break end
+                                            end
+                                        end
+                                    end
+                                    if next(eventCapture.captured) ~= nil and eventCapture.token_fn then
                                         swordAnimationState.grab(inputValue)
                                         for remote, captured in eventCapture.captured, nil, nil do
                                             local seed = captured[2]
                                             local token = eventCapture.polygon(seed)
-                                            local args = { captured[1], seed, token, 0.5, curveCFrame, targets, coordinates, false }
-                                            local ok
-                                            if remote:IsA("RemoteEvent") then
-                                                ok = pcall(function() remote:FireServer(unpack(args)) end)
-                                            elseif remote:IsA("RemoteFunction") then
-                                                ok = pcall(function() remote:InvokeServer(unpack(args)) end)
+                                            if token then
+                                                local args = { captured[1], seed, token, 0.5, curveCFrame, targets, coordinates, false }
+                                                local ok
+                                                if remote:IsA("RemoteEvent") then
+                                                    ok = pcall(function() remote:FireServer(unpack(args)) end)
+                                                elseif remote:IsA("RemoteFunction") then
+                                                    ok = pcall(function() remote:InvokeServer(unpack(args)) end)
+                                                end
+                                                if ok then fired = true end
                                             end
-                                            if ok then fired = true end
                                         end
                                     end
                                     if not fired then
@@ -1980,7 +2173,12 @@ do
                                     return
                                 end
                                 local primaryValue = tick()
-                                if parryState.debounce or primaryValue < parryState.until_at then
+                                -- auto-clear debounce after cooldown window — so same ball re-targeting
+                                -- us (or a second ball arriving) gets parried without waiting on target-change signal.
+                                if primaryValue >= parryState.until_at then
+                                    parryState.debounce = false
+                                end
+                                if parryState.debounce then
                                     return
                                 end
                                 local position = character.Position
@@ -1993,11 +2191,11 @@ do
                                 local curved = ballState.curved
                                 for _, tertiaryValue in ballState.get_all() do
                                     if not tertiaryValue then
-                                        return
+                                        continue
                                     end
                                     local quaternaryValue = tertiaryValue:FindFirstChild("zoomies")
                                     if not quaternaryValue then
-                                        return
+                                        continue
                                     end
                                     local attribute3 = tertiaryValue:GetAttribute("target")
                                     local magnitude = quaternaryValue.VectorVelocity.Magnitude
@@ -2010,15 +2208,42 @@ do
                                         ballState.state.AerodynamicTime = primaryValue
                                     end
                                     if tornado and primaryValue - ballState.state.AerodynamicTime < attribute2 + 0.314159 then
-                                        return
+                                        continue
                                     end
                                     if attribute == name and curved(tertiaryValue) then
-                                        return
+                                        continue
                                     end
-                                    if attribute3 == name and magnitude2 <= secondaryValue + maxValue(magnitude / calculationA, 9.5) and parryState.accuracy * 0.8 then
-                                        parryController.fire()
-                                        parryState.debounce = true
-                                        parryState.until_at = primaryValue + 1
+                                    local baseThreshold = secondaryValue + maxValue(magnitude / calculationA, 9.5)
+                                    -- early-fire jitter: parry up to N studs BEFORE the real reach
+                                    -- threshold, so timing isn't frame-perfect every single ball.
+                                    local earlyJitter = 0
+                                    if config.humanize then
+                                        earlyJitter = (randomValue(0, 10000) / 10000) * (config.humanize_early or 4.0)
+                                    end
+                                    if attribute3 == name and magnitude2 <= (baseThreshold - earlyJitter) and parryState.accuracy * 0.8 then
+                                        -- humanize: random miss skips this parry entirely to break perfection
+                                        if config.humanize and (config.humanize_miss or 0) > 0 then
+                                            if randomValue(1, 100) <= (config.humanize_miss or 0) then
+                                                parryState.debounce = true
+                                                parryState.until_at = primaryValue + 0.3   -- short cooldown after a fake miss
+                                                continue
+                                            end
+                                        end
+                                        -- humanize: reaction delay before firing (spawned so we don't block the check loop)
+                                        if config.humanize then
+                                            local delayMs = (config.humanize_react_min or 30)
+                                                           + randomValue(0, maxValue((config.humanize_react_max or 90) - (config.humanize_react_min or 30), 0))
+                                            parryState.debounce = true
+                                            parryState.until_at = primaryValue + 1
+                                            spawnTask(function()
+                                                task.wait(delayMs / 1000)
+                                                parryController.fire()
+                                            end)
+                                        else
+                                            parryController.fire()
+                                            parryState.debounce = true
+                                            parryState.until_at = primaryValue + 1
+                                        end
                                     end
                                 end
                             end
@@ -2032,6 +2257,26 @@ do
                                 end
                             end
                             parrySection:AddToggle("auto parry", config.auto_parry or false, parryState.set)
+                            parrySection:AddToggle("humanize", config.humanize or false, function(on)
+                                config.humanize = on
+                                if configStorage and configStorage.save then configStorage.save() end
+                            end)
+                            parrySection:AddSlider("miss chance %", 0, 25, config.humanize_miss or 5, function(v)
+                                config.humanize_miss = v
+                                if configStorage and configStorage.save then configStorage.save() end
+                            end)
+                            parrySection:AddSlider("reaction min (ms)", 0, 150, config.humanize_react_min or 30, function(v)
+                                config.humanize_react_min = v
+                                if configStorage and configStorage.save then configStorage.save() end
+                            end)
+                            parrySection:AddSlider("reaction max (ms)", 0, 250, config.humanize_react_max or 90, function(v)
+                                config.humanize_react_max = v
+                                if configStorage and configStorage.save then configStorage.save() end
+                            end)
+                            parrySection:AddSlider("early jitter (studs)", 0, 10, config.humanize_early or 4, function(v)
+                                config.humanize_early = v
+                                if configStorage and configStorage.save then configStorage.save() end
+                            end)
                             remotes.ParrySuccessAll.OnClientEvent:Connect(function(inputValue, secondaryInput)
                                 if secondaryInput.Parent and secondaryInput.Parent ~= localPlayer.Character and secondaryInput.Parent.Parent ~= alive then
                                     return
@@ -2129,11 +2374,15 @@ do
                             end)
                         end)
                         curveController.hotkeys = {
-                            [Enum.KeyCode.One] = "camera",
-                            [Enum.KeyCode.Two] = "dot",
+                            [Enum.KeyCode.One]   = "camera",
+                            [Enum.KeyCode.Two]   = "dot",
                             [Enum.KeyCode.Three] = "backwards",
-                            [Enum.KeyCode.Four] = "slow",
-                            [Enum.KeyCode.Five] = "random",
+                            [Enum.KeyCode.Four]  = "slow",
+                            [Enum.KeyCode.Five]  = "random",
+                            [Enum.KeyCode.Six]   = "insane",
+                            [Enum.KeyCode.Seven] = "chaos",
+                            [Enum.KeyCode.Eight] = "spiral",
+                            [Enum.KeyCode.Nine]  = "sky",
                         }
                         curveController.dropdown = curve:AddDropdown("curve method", {
                             "camera",
@@ -2141,6 +2390,10 @@ do
                             "backwards",
                             "slow",
                             "random",
+                            "insane",
+                            "chaos",
+                            "spiral",
+                            "sky",
                         }, config.curve_method or "camera", function(curveMethod)
                             local syncing = curveController.syncing
                             spawnTask(function()
@@ -3831,10 +4084,88 @@ do
                             spawnTask(function()
                                 inventoryUnlockManager:initialize()
                             end)
+                            -- NEW: delegate "unlock all" to the external UnlockSuite script
+                            -- (hosted in user's RobloxScript repo). Old inline inventoryUnlockManager
+                            -- stays loaded (other code refs it) but we don't call set_enabled anymore —
+                            -- UnlockSuite handles shop cards + equip globals + emote wheel itself.
+                            local UNLOCKSUITE_URL = "https://raw.githubusercontent.com/zeremonys/RobloxScript/main/UnlockSuite.lua"
+                            local unlockSuiteLoaded = false
+                            local function bootUnlockSuite()
+                                if unlockSuiteLoaded then return true end
+                                local okSrc, src = pcall(function() return game:HttpGet(UNLOCKSUITE_URL .. "?v=" .. tick()) end)
+                                if not okSrc or type(src) ~= "string" or #src < 100 then
+                                    notificationService:notify({
+                                        title = "unlock all",
+                                        content = "failed to fetch UnlockSuite.lua",
+                                        duration = 4,
+                                    })
+                                    return false
+                                end
+                                local okLoad, fn = pcall(loadstring, src)
+                                if not okLoad or type(fn) ~= "function" then
+                                    notificationService:notify({
+                                        title = "unlock all",
+                                        content = "loadstring failed: " .. tostring(fn),
+                                        duration = 4,
+                                    })
+                                    return false
+                                end
+                                local okRun, err = pcall(fn)
+                                if not okRun then
+                                    notificationService:notify({
+                                        title = "unlock all",
+                                        content = "runtime error: " .. tostring(err),
+                                        duration = 5,
+                                    })
+                                    return false
+                                end
+                                unlockSuiteLoaded = true
+                                return true
+                            end
+                            local function killUnlockSuite()
+                                pcall(function()
+                                    local g = getgenv and getgenv()._usStandaloneUnlockGui
+                                    if g then g:Destroy(); getgenv()._usStandaloneUnlockGui = nil end
+                                end)
+                                pcall(function()
+                                    local playerGui = localPlayer:FindFirstChild("PlayerGui")
+                                    if playerGui then
+                                        local g = playerGui:FindFirstChild("UnlockSuiteUnlockAllEmotes")
+                                        if g then g:Destroy() end
+                                    end
+                                end)
+                                pcall(function()
+                                    if getgenv then
+                                        getgenv()._usStandaloneUnlockLoop = false
+                                        getgenv().skinChanger = false
+                                        getgenv().explosionChanger = false
+                                    end
+                                end)
+                                unlockSuiteLoaded = false
+                            end
                             misc:AddToggle("unlock all", config.unlock_all or false, function(unlockAll)
                                 config.unlock_all = unlockAll
-                                inventoryUnlockManager:set_enabled(unlockAll)
+                                if unlockAll then
+                                    local ok = bootUnlockSuite()
+                                    if ok then
+                                        notificationService:notify({
+                                            title = "unlock all",
+                                            content = "UnlockSuite active — swords/explosions/emotes unlocked",
+                                            duration = 3,
+                                        })
+                                    end
+                                else
+                                    killUnlockSuite()
+                                    notificationService:notify({
+                                        title = "unlock all",
+                                        content = "UnlockSuite disabled",
+                                        duration = 2,
+                                    })
+                                end
                             end)
+                            if config.unlock_all then
+                                spawnTask(function() task.wait(0.5); bootUnlockSuite() end)
+                            end
                         end
                     end
                     do
