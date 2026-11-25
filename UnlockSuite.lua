@@ -111,10 +111,20 @@ end
 
 
     do
-        -- DISABLED: don't auto-force last-equipped sword/explosion on load.
-        -- Leaving these globals unset preserves whatever the player has equipped in-game.
-        -- The shop-click equip flow (equipShopItem) still sets them when the user
-        -- actively picks something from the unlocked shop.
+        -- Remember and re-apply the last sword/explosion the user picked via the shop,
+        -- so a rejoin keeps Abyssal (etc) equipped instead of reverting to the game default.
+        local savedLastSword = loadLastEquippedSword()
+        local savedLastExplosion = loadLastEquippedExplosion()
+        if type(savedLastSword) == "string" and savedLastSword ~= "" then
+            getgenv().skinChanger = true
+            getgenv().swordModel      = savedLastSword
+            getgenv().swordAnimations = savedLastSword
+            getgenv().swordFX         = savedLastSword
+        end
+        if type(savedLastExplosion) == "string" and savedLastExplosion ~= "" then
+            getgenv().explosionChanger = true
+            getgenv().explosionFX = savedLastExplosion
+        end
     end
 
     task.spawn(function()
