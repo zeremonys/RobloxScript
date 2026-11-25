@@ -747,11 +747,10 @@ do
                             end
                             lib:Theme("white")
                        do
-                           local oxyWindow = lib:AddWindow("zenny private", "v1.6")
+                           local oxyWindow = lib:AddWindow("zenny private", "v2.2")
                            local combat = oxyWindow:AddTab("combat", "rbxassetid://10734951847")
                            visual2 = oxyWindow:AddTab("visual", "rbxassetid://10723346959")  -- ลบ local
                            misc2 = oxyWindow:AddTab("misc", "rbxassetid://10709797985")      -- ลบ local
-                           autoFarmTab = oxyWindow:AddTab("auto farm", "rbxassetid://10723346959")
                            fflagsTab = oxyWindow:AddTab("fflags", "rbxassetid://10723364435")
                            parrySection = combat:AddSection("parry", "left")
                            curve = combat:AddSection("curve", "right")
@@ -4761,147 +4760,6 @@ do
                         if v1.enabled then enableV1() end
                     end
 
-                    -- ===== AUTO FARM (playtime / quests / skills) =====
-                    do
-                        local farm = autoFarmTab:AddSection("auto farm", "left")
-                        local farmState = { pt = false, qs = false, sk = false, ptThread = nil, qsThread = nil, skThread = nil }
-                        local VirtualInputManager = game:GetService("VirtualInputManager")
-
-                        -- scan ReplicatedStorage for a remote whose name matches any of the keywords
-                        local function findRemote(keywords)
-                            for _, r in ipairs(ReplicatedStorage:GetDescendants()) do
-                                if r:IsA("RemoteEvent") or r:IsA("RemoteFunction") then
-                                    local n = r.Name:lower()
-                                    for _, kw in ipairs(keywords) do
-                                        if n:find(kw, 1, true) then return r end
-                                    end
-                                end
-                            end
-                            return nil
-                        end
-
-                        local function fireRemote(r)
-                            if not r then return false end
-                            local ok = pcall(function()
-                                if r:IsA("RemoteEvent") then r:FireServer()
-                                elseif r:IsA("RemoteFunction") then r:InvokeServer() end
-                            end)
-                            return ok
-                        end
-
-                        -- try to click an in-game UI button by name as a fallback
-                        local function clickButton(nameKeywords)
-                            local pGui = localPlayer:FindFirstChild("PlayerGui")
-                            if not pGui then return false end
-                            for _, d in ipairs(pGui:GetDescendants()) do
-                                if (d:IsA("TextButton") or d:IsA("ImageButton")) and d.Visible then
-                                    local n = (d.Name or ""):lower()
-                                    local t = (d:IsA("TextButton") and (d.Text or "") or ""):lower()
-                                    for _, kw in ipairs(nameKeywords) do
-                                        if n:find(kw, 1, true) or t:find(kw, 1, true) then
-                                            pcall(function()
-                                                for _, con in ipairs(getconnections(d.MouseButton1Click)) do
-                                                    if con.Fire then con:Fire() elseif con.Function then con.Function() end
-                                                end
-                                            end)
-                                            return true
-                                        end
-                                    end
-                                end
-                            end
-                            return false
-                        end
-
-                        -- ===== PLAYTIME =====
-                        farm:AddToggle("auto playtime reward", config.auto_playtime or false, function(on)
-                            config.auto_playtime = on
-                            configStorage.save()
-                            if on and not farmState.pt then
-                                farmState.pt = true
-                                farmState.ptThread = task.spawn(function()
-                                    while farmState.pt and config.auto_playtime and _G.zenny_private do
-                                        local r = findRemote({"playtime", "timereward", "playtimere", "claimtime"})
-                                        if r then fireRemote(r) else clickButton({"playtime", "claim"}) end
-                                        task.wait(20)
-                                    end
-                                end)
-                                notificationService:notify({ title = "auto farm", content = "playtime ON (claim every 20s)", duration = 2 })
-                            elseif not on then
-                                farmState.pt = false
-                                notificationService:notify({ title = "auto farm", content = "playtime OFF", duration = 2 })
-                            end
-                        end)
-
-                        -- ===== DAILY QUESTS =====
-                        farm:AddToggle("auto claim quest", config.auto_quest or false, function(on)
-                            config.auto_quest = on
-                            configStorage.save()
-                            if on and not farmState.qs then
-                                farmState.qs = true
-                                farmState.qsThread = task.spawn(function()
-                                    while farmState.qs and config.auto_quest and _G.zenny_private do
-                                        local r = findRemote({"dailyquest", "claimquest", "questchest", "claimdaily", "claimrewar"})
-                                        if r then fireRemote(r) else clickButton({"claim", "quest"}) end
-                                        task.wait(30)
-                                    end
-                                end)
-                                notificationService:notify({ title = "auto farm", content = "quests ON (check every 30s)", duration = 2 })
-                            elseif not on then
-                                farmState.qs = false
-                                notificationService:notify({ title = "auto farm", content = "quests OFF", duration = 2 })
-                            end
-                        end)
-
-                        -- ===== AUTO SKILLS =====
-                        farm:AddSlider("skill interval (s)", 1, 30, config.skill_interval or 5, function(val)
-                            config.skill_interval = math.max(1, math.round(val))
-                        end)
-
-                        local skillKey = config.skill_key or "Q"
-                        local function sendKeyTap(keyName)
-                            local kc = Enum.KeyCode[keyName] or Enum.KeyCode.Q
-                            pcall(function()
-                                VirtualInputManager:SendKeyEvent(true, kc, false, game)
-                                task.wait(0.03)
-                                VirtualInputManager:SendKeyEvent(false, kc, false, game)
-                            end)
-                        end
-
-                        farm:AddDropdown("skill key", { "Q", "E", "R", "F", "T", "G", "Z", "X", "C" },
-                            config.skill_key or "Q", function(k)
-                                config.skill_key = k
-                                skillKey = k
-                            end)
-
-                        farm:AddToggle("auto use skill", config.auto_skill or false, function(on)
-                            config.auto_skill = on
-                            configStorage.save()
-                            if on and not farmState.sk then
-                                farmState.sk = true
-                                farmState.skThread = task.spawn(function()
-                                    while farmState.sk and config.auto_skill and _G.zenny_private do
-                                        sendKeyTap(skillKey)
-                                        task.wait(config.skill_interval or 5)
-                                    end
-                                end)
-                                notificationService:notify({ title = "auto farm", content = "skill spam ON (key " .. tostring(skillKey) .. ")", duration = 2 })
-                            elseif not on then
-                                farmState.sk = false
-                                notificationService:notify({ title = "auto farm", content = "skill spam OFF", duration = 2 })
-                            end
-                        end)
-
-                        farm:AddButton("test: claim now", function()
-                            local r1 = findRemote({"playtime", "timereward", "claimtime"})
-                            local r2 = findRemote({"dailyquest", "claimquest", "questchest"})
-                            notificationService:notify({ title = "auto farm",
-                                content = "playtime remote: " .. (r1 and r1.Name or "NOT FOUND") ..
-                                       "\nquest remote: "  .. (r2 and r2.Name or "NOT FOUND"),
-                                duration = 6 })
-                            if r1 then fireRemote(r1) end
-                            if r2 then fireRemote(r2) end
-                        end)
-                    end
 
                     return
                 end
