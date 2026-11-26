@@ -4084,88 +4084,10 @@ do
                             spawnTask(function()
                                 inventoryUnlockManager:initialize()
                             end)
-                            -- NEW: delegate "unlock all" to the external UnlockSuite script
-                            -- (hosted in user's RobloxScript repo). Old inline inventoryUnlockManager
-                            -- stays loaded (other code refs it) but we don't call set_enabled anymore —
-                            -- UnlockSuite handles shop cards + equip globals + emote wheel itself.
-                            local UNLOCKSUITE_URL = "https://raw.githubusercontent.com/zeremonys/RobloxScript/main/UnlockSuite.lua"
-                            local unlockSuiteLoaded = false
-                            local function bootUnlockSuite()
-                                if unlockSuiteLoaded then return true end
-                                local okSrc, src = pcall(function() return game:HttpGet(UNLOCKSUITE_URL .. "?v=" .. tick()) end)
-                                if not okSrc or type(src) ~= "string" or #src < 100 then
-                                    notificationService:notify({
-                                        title = "unlock all",
-                                        content = "failed to fetch UnlockSuite.lua",
-                                        duration = 4,
-                                    })
-                                    return false
-                                end
-                                local okLoad, fn = pcall(loadstring, src)
-                                if not okLoad or type(fn) ~= "function" then
-                                    notificationService:notify({
-                                        title = "unlock all",
-                                        content = "loadstring failed: " .. tostring(fn),
-                                        duration = 4,
-                                    })
-                                    return false
-                                end
-                                local okRun, err = pcall(fn)
-                                if not okRun then
-                                    notificationService:notify({
-                                        title = "unlock all",
-                                        content = "runtime error: " .. tostring(err),
-                                        duration = 5,
-                                    })
-                                    return false
-                                end
-                                unlockSuiteLoaded = true
-                                return true
-                            end
-                            local function killUnlockSuite()
-                                pcall(function()
-                                    local g = getgenv and getgenv()._usStandaloneUnlockGui
-                                    if g then g:Destroy(); getgenv()._usStandaloneUnlockGui = nil end
-                                end)
-                                pcall(function()
-                                    local playerGui = localPlayer:FindFirstChild("PlayerGui")
-                                    if playerGui then
-                                        local g = playerGui:FindFirstChild("UnlockSuiteUnlockAllEmotes")
-                                        if g then g:Destroy() end
-                                    end
-                                end)
-                                pcall(function()
-                                    if getgenv then
-                                        getgenv()._usStandaloneUnlockLoop = false
-                                        getgenv().skinChanger = false
-                                        getgenv().explosionChanger = false
-                                    end
-                                end)
-                                unlockSuiteLoaded = false
-                            end
                             misc:AddToggle("unlock all", config.unlock_all or false, function(unlockAll)
                                 config.unlock_all = unlockAll
-                                if unlockAll then
-                                    local ok = bootUnlockSuite()
-                                    if ok then
-                                        notificationService:notify({
-                                            title = "unlock all",
-                                            content = "UnlockSuite active — swords/explosions/emotes unlocked",
-                                            duration = 3,
-                                        })
-                                    end
-                                else
-                                    killUnlockSuite()
-                                    notificationService:notify({
-                                        title = "unlock all",
-                                        content = "UnlockSuite disabled",
-                                        duration = 2,
-                                    })
-                                end
+                                inventoryUnlockManager:set_enabled(unlockAll)
                             end)
-                            if config.unlock_all then
-                                spawnTask(function() task.wait(0.5); bootUnlockSuite() end)
-                            end
                         end
                     end
                     do
